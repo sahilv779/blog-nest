@@ -80,3 +80,9 @@ $ npm run test
 ```
 **Make sure to provide valid ids/mock data in respective spec.ts files in controller folders**
 
+## Run Project Locally
+
+```bash
+$ npm run start
+```
+**Make sure you have a valid .env file in the root directory, with valid mongo uri**
