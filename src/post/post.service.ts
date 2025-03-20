@@ -7,7 +7,6 @@ import { Post, PostDocument } from './post.schema';
 export class PostService {
   constructor(@InjectModel(Post.name) public postModel: Model<PostDocument>) {}
 
-  // ✅ Get all posts
   async getAllPosts(): Promise<Post[]> {
     return this.postModel.find().populate('authorId', 'name email').exec();
   }
@@ -26,5 +25,9 @@ export class PostService {
   // ✅ Find post by ID
   async findById(postId: string): Promise<Post | null> {
     return this.postModel.findById(postId).exec();
+  }
+  // ✅ Delete post
+  async delete(postId: string): Promise<Post | null> {
+    return this.postModel.findByIdAndDelete(postId).exec();
   }
 }

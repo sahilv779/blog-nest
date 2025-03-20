@@ -32,7 +32,7 @@ const generatePosts = async (
     posts.push({
       title: faker.lorem.sentence(),
       body: faker.lorem.paragraphs(3),
-      authorId: randomUser._id, // ✅ Now works correctly
+      authorId: randomUser.providerId, // ✅ Now works correctly
     } as Post);
   }
   return PostModel.insertMany(posts);
