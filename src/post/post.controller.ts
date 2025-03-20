@@ -45,4 +45,8 @@ export class PostController {
   async deletePost(@Req() req) {
     return this.postService.delete(req.params.id);
   }
+  @Post('update/:id')
+  async updatePost(@Req() req, @Body() body) {
+    return this.postService.update(req.params.id, body);
+  }
 }

@@ -30,4 +30,8 @@ export class PostService {
   async delete(postId: string): Promise<Post | null> {
     return this.postModel.findByIdAndDelete(postId).exec();
   }
+
+  update(id, body) {
+    return this.postModel.findByIdAndUpdate(id, body, { new: true }).exec();
+  }
 }
