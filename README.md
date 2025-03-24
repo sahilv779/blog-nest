@@ -14,7 +14,11 @@
   - [Post Module](#post-module)
 - [Endpoints](#endpoints)
 - [Deployment](#deployment)
-
+- [Dummy Data](#dummy-data)
+- [Run Cypress Tests](#run-cypress-tests)
+- [Run Jest Tests](#run-jest-tests)
+- [Run Project Locally](#run-project-locally)
+- [Terraform-eks-docker setup](#Terraform-eks-docker)
 ## Introduction
 This is a blog application backend built with **NestJS** that integrates **Passport.js** for **OAuth** authentication using **Google** and **Facebook**. Users can create, read, and edit their blog posts after signing up and logging in via OAuth.
 
@@ -228,3 +232,217 @@ $ npm run test
 $ npm run start
 ```
 **Make sure you have a valid .env file in the root directory, with valid mongo uri**
+
+# Terraform Deployment Guide for Blog App
+
+## Overview
+This guide provides step-by-step instructions for deploying the **Blog App** frontend (Angular) and backend (NestJS) to AWS using **Terraform, AWS EKS (Kubernetes), and AWS ECR (Elastic Container Registry)**.
+
+## Prerequisites
+Ensure you have the following installed:
+- **Terraform** (>= 1.0)
+- **AWS CLI** (configured with your credentials)
+- **Docker** (for building images)
+- **Kubectl** (to manage Kubernetes cluster)
+
+---
+
+## Terraform-eks-docker
+
+### Create `provider.tf`
+```hcl
+provider "aws" {
+  region = "us-west-2" # Adjust as needed
+}
+```
+
+### Create `ecr.tf` (ECR Repositories for Docker Images)
+```hcl
+resource "aws_ecr_repository" "frontend" {
+  name = "frontend-app"
+}
+
+resource "aws_ecr_repository" "backend" {
+  name = "backend-app"
+}
+```
+
+### Create `eks.tf` (EKS Cluster)
+```hcl
+resource "aws_eks_cluster" "main" {
+  name     = "main-cluster"
+  role_arn = aws_iam_role.eks_role.arn
+
+  vpc_config {
+    subnet_ids = aws_subnet.main[*].id
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
+}
+
+resource "aws_iam_role" "eks_role" {
+  name = "eks-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "eks.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
+  role       = aws_iam_role.eks_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
+```
+
+---
+
+## 2. Deploy Kubernetes Resources
+
+### Create `kubernetes.tf`
+```hcl
+resource "kubernetes_deployment" "frontend" {
+  metadata {
+    name = "frontend"
+    labels = { app = "frontend" }
+  }
+  spec {
+    replicas = 2
+    selector { match_labels = { app = "frontend" } }
+    template {
+      metadata { labels = { app = "frontend" } }
+      spec {
+        container {
+          name  = "frontend"
+          image = "aws_account_id.dkr.ecr.us-west-2.amazonaws.com/frontend-app:latest"
+          ports { container_port = 80 }
+        }
+      }
+    }
+  }
+}
+
+resource "kubernetes_deployment" "backend" {
+  metadata {
+    name = "backend"
+    labels = { app = "backend" }
+  }
+  spec {
+    replicas = 2
+    selector { match_labels = { app = "backend" } }
+    template {
+      metadata { labels = { app = "backend" } }
+      spec {
+        container {
+          name  = "backend"
+          image = "aws_account_id.dkr.ecr.us-west-2.amazonaws.com/backend-app:latest"
+          ports { container_port = 3000 }
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## 3. Deploy EKS Node Group
+
+### Create `eks_node_group.tf`
+```hcl
+resource "aws_eks_node_group" "main" {
+  cluster_name    = aws_eks_cluster.main.name
+  node_group_name = "main-node-group"
+  node_role_arn   = aws_iam_role.node_group_role.arn
+  subnet_ids      = aws_subnet.main[*].id
+
+  scaling_config {
+    desired_size = 2
+    max_size     = 3
+    min_size     = 1
+  }
+}
+
+resource "aws_iam_role" "node_group_role" {
+  name = "eks-node-group-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "node_group_policy" {
+  role       = aws_iam_role.node_group_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+}
+```
+
+---
+
+## 4. Build Docker Images and Push to AWS ECR
+
+### Authenticate AWS ECR
+```sh
+aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin aws_account_id.dkr.ecr.us-west-2.amazonaws.com
+```
+
+### Build and Push Frontend Docker Image
+```sh
+docker build -t frontend-app .
+docker tag frontend-app:latest aws_account_id.dkr.ecr.us-west-2.amazonaws.com/frontend-app:latest
+docker push aws_account_id.dkr.ecr.us-west-2.amazonaws.com/frontend-app:latest
+```
+
+### Build and Push Backend Docker Image
+```sh
+docker build -t backend-app .
+docker tag backend-app:latest aws_account_id.dkr.ecr.us-west-2.amazonaws.com/backend-app:latest
+docker push aws_account_id.dkr.ecr.us-west-2.amazonaws.com/backend-app:latest
+```
+
+---
+
+## 5. Apply Terraform Configuration
+
+Initialize Terraform and apply configurations:
+```sh
+terraform init
+terraform apply
+```
+Confirm the deployment by typing `yes` when prompted.
+
+---
+
+## 6. Verify Deployment
+
+- **Check Kubernetes Pods**:
+  ```sh
+  kubectl get pods
+  ```
+- **Check Kubernetes Services**:
+  ```sh
+  kubectl get svc
+  ```
+  Look for the LoadBalancer assigned to the frontend service to access it via browser.
+- **Access the Application**:
+    - Use the **frontend service LoadBalancer IP** to access the web app.
+    - Use the **backend service URL** for API testing.
+
+---
+
+## Conclusion
+You have successfully deployed the **Blog App** using **Terraform, AWS EKS, and AWS ECR**. This setup allows for a scalable and cloud-native deployment, ensuring high availability and resilience.
+
+### Next Steps:
+- Automate deployment with **CI/CD pipelines** (GitHub Actions, Jenkins, etc.).
+- Implement **monitoring and logging** using AWS CloudWatch or Prometheus.
+- Secure Kubernetes with **RBAC and network policies**.
+
+---
